@@ -7,6 +7,8 @@ This matches Page 5 of the report: توطين المهن.
 
 import pandas as pd
 
+from .profession_quotas import get_quota, get_quota_source, DEFAULT_QUOTA
+
 SAUDI_KEYWORDS = ['سعودي', 'سعودية', 'saudi', 'السعودية']
 
 
@@ -58,21 +60,27 @@ def compute_profession_nitaqat(gosi_df, active_only=True) -> pd.DataFrame:
     grouped['non_saudi_count'] = grouped['total'] - grouped['saudi_count']
     grouped['saudi_pct'] = (grouped['saudi_count'] / grouped['total'] * 100).round(1)
 
-    # Determine status and required action
+    # Apply HRSD profession-specific quota
+    quotas = grouped['profession'].apply(get_quota_source)
+    grouped['required_pct'] = [q[0] for q in quotas]
+    grouped['quota_source'] = [q[1] for q in quotas]
+
+    # Determine status and required action using per-profession quota
     def _status_and_action(row):
+        req_pct = row['required_pct']
         if row['total'] == 0:
             return 'غير متاح', '', 0
 
-        if row['saudi_count'] > 0 and row['saudi_pct'] >= 20:
-            return 'محقق النسبة ✅', '', 0
+        if row['saudi_pct'] >= req_pct:
+            return f'محقق النسبة ({req_pct}%) ✅', '', 0
 
-        if row['saudi_count'] > 0 and row['saudi_pct'] < 20:
-            needed = max(0, round(row['total'] * 0.2) - row['saudi_count'])
-            return 'غير محقق نسبة التوطين ❌', f'يلزم توطين {needed} سعودي', needed
-
-        # Zero Saudis
-        needed = max(1, round(row['total'] * 0.2))
-        return 'يلزم توطين ❌', f'يلزم توطين {needed} سعودي', needed
+        target_saudis = -(-row['total'] * req_pct // 100)  # ceil
+        needed = max(1, int(target_saudis - row['saudi_count']))
+        return (
+            f'غير محقق ({req_pct}% مطلوب) ❌',
+            f'يلزم توطين {needed} سعودي للوصول إلى {req_pct}%',
+            needed,
+        )
 
     results = grouped.apply(_status_and_action, axis=1, result_type='expand')
     results.columns = ['status', 'action', 'required_saudis']

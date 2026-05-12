@@ -23,6 +23,10 @@ from modules.audit_engine import (
 from modules.nitaqat_engine import (
     compute_profession_nitaqat, get_nitaqat_summary,
 )
+from modules.entity_nitaqat import compute_entity_band
+from modules.nitaqat_constants import (
+    list_activities, BAND_KEYS, BAND_LABELS_AR, BAND_COLORS_HEX, YEARS,
+)
 
 # ─────────────────────────────────────────────────────────
 #  Page Config
@@ -608,10 +612,11 @@ st.markdown("""
 # ─────────────────────────────────────────────────────────
 #  Tabs
 # ─────────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "   📂  رفع الملفات   ",
     "   🔍  تقرير المقارنات   ",
     "   📊  توطين المهن   ",
+    "   🎯  نطاق المنشأة   ",
 ])
 
 
@@ -975,4 +980,179 @@ with tab3:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
                 )
+
+
+# ═══════════════════════════════════════════════════════════
+#  TAB 4 — Entity Nitaqat Band (نطاق المنشأة - نطاقات المطور 2026)
+# ═══════════════════════════════════════════════════════════
+with tab4:
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    if not st.session_state['files_processed'] or st.session_state['gosi_df'] is None:
+        _empty_state(
+            "🎯",
+            "لا توجد بيانات لاحتساب النطاق",
+            "ارفع ملف GOSI من تبويب «رفع الملفات» ثم اختر النشاط والسنة هنا",
+        )
+    else:
+        st.markdown('<div class="section-title">نطاق المنشأة — نطاقات المطور 2026</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-sub">احتساب لون النطاق (أحمر / أخضر منخفض / متوسط / مرتفع / بلاتيني) '
+            'وفق الدليل الإجرائي: <code>ص = m × ln(س) + t</code></div>',
+            unsafe_allow_html=True,
+        )
+
+        sel_col1, sel_col2 = st.columns([3, 1], gap="large")
+        with sel_col1:
+            activity = st.selectbox(
+                "النشاط الاقتصادي",
+                options=list_activities(),
+                key="entity_activity",
+            )
+        with sel_col2:
+            year = st.selectbox("السنة", options=list(YEARS), key="entity_year")
+
+        try:
+            result = compute_entity_band(st.session_state['gosi_df'], activity, int(year))
+        except Exception as e:
+            st.error(f"خطأ في الاحتساب: {e}")
+            st.stop()
+
+        if result['total'] == 0:
+            st.warning("⚠️ لا يوجد موظفون نشطون في ملف GOSI لاحتساب النطاق.")
+            st.stop()
+
+        # ── KPIs ──
+        k1, k2, k3, k4, k5 = st.columns(5, gap="small")
+        with k1:
+            _kpi_card("👥", result['total'], "إجمالي العمالة النشطة", "#0071e3")
+        with k2:
+            _kpi_card("🇸🇦", result['saudi'], "سعوديون", "#30d158")
+        with k3:
+            _kpi_card("🌍", result['non_saudi'], "وافدون", "#ff9f0a")
+        with k4:
+            _kpi_card("📈", f"{result['saudi_pct']}%", "نسبة التوطين الفعلية (ن)", "#0071e3")
+        with k5:
+            _kpi_card("🎯", result['band_label_ar'], "النطاق الحالي", result['band_color'])
+
+        st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+        # ── Thresholds visualization ──
+        st.markdown('<div class="section-title">العتبات الأربع (ص) للنشاط المختار</div>', unsafe_allow_html=True)
+
+        thr = result['thresholds']
+        segments = [
+            ("red",        0,                  thr['low_green']),
+            ("low_green",  thr['low_green'],   thr['mid_green']),
+            ("mid_green",  thr['mid_green'],   thr['high_green']),
+            ("high_green", thr['high_green'],  thr['platinum']),
+            ("platinum",   thr['platinum'],    100),
+        ]
+
+        # Build a horizontal stacked bar to visualize bands
+        bar_fig = go.Figure()
+        for band_key, start, end in segments:
+            width = max(0, end - start)
+            if width <= 0:
+                continue
+            bar_fig.add_trace(go.Bar(
+                x=[width],
+                y=["النطاق"],
+                base=[start],
+                orientation='h',
+                marker=dict(color=BAND_COLORS_HEX[band_key]),
+                name=BAND_LABELS_AR[band_key],
+                hovertemplate=f"{BAND_LABELS_AR[band_key]}: {start:.2f}% → {end:.2f}%<extra></extra>",
+                showlegend=True,
+            ))
+        # Marker for current position
+        bar_fig.add_trace(go.Scatter(
+            x=[result['saudi_pct']],
+            y=["النطاق"],
+            mode='markers+text',
+            marker=dict(symbol='triangle-down', size=22, color='#1d1d1f', line=dict(width=2, color='white')),
+            text=[f"أنت هنا: {result['saudi_pct']}%"],
+            textposition='top center',
+            textfont=dict(size=13, family='Tajawal', color='#1d1d1f'),
+            showlegend=False,
+            hovertemplate=f"نسبة التوطين الحالية: {result['saudi_pct']}%<extra></extra>",
+        ))
+        bar_fig.update_layout(
+            barmode='stack',
+            xaxis=dict(title='نسبة التوطين %', range=[0, 100], gridcolor='rgba(0,0,0,0.05)'),
+            yaxis=dict(showticklabels=False),
+            height=250,
+            margin=dict(t=40, b=40, l=20, r=20),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(family='Tajawal'),
+            legend=dict(orientation='h', y=-0.3),
+        )
+        st.plotly_chart(bar_fig, use_container_width=True)
+
+        # ── Thresholds table ──
+        st.markdown('<div class="section-title">الحدود الدنيا والفجوة بعدد السعوديين</div>', unsafe_allow_html=True)
+
+        rows_html = ""
+        for bkey in BAND_KEYS:
+            label = BAND_LABELS_AR[bkey]
+            color = BAND_COLORS_HEX[bkey]
+            min_pct = thr[bkey]
+            gap = result['gaps'][bkey]
+            achieved = result['saudi_pct'] >= min_pct
+            mark = "✅" if achieved else "❌"
+            gap_text = "—" if achieved else f"+{gap} سعودي"
+            rows_html += (
+                f'<tr><td><span style="display:inline-block;width:12px;height:12px;background:{color};'
+                f'border-radius:3px;margin-left:6px;"></span>{label}</td>'
+                f'<td>{min_pct:.2f}%</td><td>{mark}</td><td>{gap_text}</td></tr>'
+            )
+
+        st.markdown(
+            f'<table class="summary-table"><thead><tr>'
+            f'<th>اللون</th><th>الحد الأدنى (ص)</th><th>الحالة</th><th>المطلوب للوصول</th>'
+            f'</tr></thead><tbody>{rows_html}</tbody></table>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+        # ── Services for current band ──
+        st.markdown(
+            f'<div class="section-title">الخدمات المتاحة في {result["services_label"]}</div>',
+            unsafe_allow_html=True,
+        )
+        services_html = '<ul style="font-size:14px; line-height:1.9; color:#1d1d1f;">'
+        for svc in result['services']:
+            services_html += f'<li>{svc}</li>'
+        services_html += '</ul>'
+        st.markdown(
+            f'<div class="card" style="border-right:6px solid {result["band_color"]};">{services_html}</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+        # ── Formula breakdown ──
+        with st.expander("📐 تفاصيل المعادلة (ص = m × ln(س) + t)"):
+            import math as _math
+            from modules.nitaqat_constants import ACTIVITIES as _ACT
+            ln_s = _math.log(result['total']) if result['total'] > 0 else 0
+            calc_rows = ""
+            for bkey in BAND_KEYS:
+                m = _ACT[activity][bkey]['m']
+                t = _ACT[activity][bkey]['t'][int(year)]
+                y = m * ln_s + t
+                calc_rows += (
+                    f"<tr><td>{BAND_LABELS_AR[bkey]}</td>"
+                    f"<td>{m}</td><td>{t}</td>"
+                    f"<td>{m} × ln({result['total']}) + {t}</td>"
+                    f"<td><strong>{y:.2f}%</strong></td></tr>"
+                )
+            st.markdown(
+                f'<table class="summary-table"><thead><tr>'
+                f'<th>اللون</th><th>m</th><th>t ({year})</th><th>الحساب</th><th>ص</th>'
+                f'</tr></thead><tbody>{calc_rows}</tbody></table>',
+                unsafe_allow_html=True,
+            )
 
