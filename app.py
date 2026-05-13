@@ -1150,6 +1150,27 @@ with tab4:
         if sim_key_n not in st.session_state:
             st.session_state[sim_key_n] = 0
 
+        min_s = -result['saudi']
+        min_n = -result['non_saudi']
+
+        # Clamp existing state in case prior data changed bounds
+        st.session_state[sim_key_s] = max(min_s, min(int(st.session_state[sim_key_s]), 10000))
+        st.session_state[sim_key_n] = max(min_n, min(int(st.session_state[sim_key_n]), 10000))
+
+        def _adj_s(delta):
+            st.session_state[sim_key_s] = max(
+                min_s, min(10000, int(st.session_state[sim_key_s]) + delta)
+            )
+
+        def _adj_n(delta):
+            st.session_state[sim_key_n] = max(
+                min_n, min(10000, int(st.session_state[sim_key_n]) + delta)
+            )
+
+        def _reset_sim():
+            st.session_state[sim_key_s] = 0
+            st.session_state[sim_key_n] = 0
+
         sim_c1, sim_c2, sim_c3 = st.columns([1, 1, 1], gap="medium")
 
         with sim_c1:
@@ -1160,19 +1181,17 @@ with tab4:
             )
             bs1, bs2, bs3 = st.columns([1, 2, 1])
             with bs1:
-                if st.button("➖", key=f"btn_s_minus_{activity}_{year}", use_container_width=True):
-                    st.session_state[sim_key_s] = max(
-                        -result['saudi'], st.session_state[sim_key_s] - 1
-                    )
+                st.button("➖", key=f"btn_s_minus_{activity}_{year}",
+                          use_container_width=True, on_click=_adj_s, args=(-1,))
             with bs2:
-                st.session_state[sim_key_s] = st.number_input(
-                    "Δ سعودي", value=st.session_state[sim_key_s],
-                    min_value=-result['saudi'], max_value=10000, step=1,
-                    key=f"ni_s_{activity}_{year}", label_visibility="collapsed",
+                st.number_input(
+                    "Δ سعودي",
+                    min_value=min_s, max_value=10000, step=1,
+                    key=sim_key_s, label_visibility="collapsed",
                 )
             with bs3:
-                if st.button("➕", key=f"btn_s_plus_{activity}_{year}", use_container_width=True):
-                    st.session_state[sim_key_s] = st.session_state[sim_key_s] + 1
+                st.button("➕", key=f"btn_s_plus_{activity}_{year}",
+                          use_container_width=True, on_click=_adj_s, args=(1,))
 
         with sim_c2:
             st.markdown(
@@ -1182,19 +1201,17 @@ with tab4:
             )
             bn1, bn2, bn3 = st.columns([1, 2, 1])
             with bn1:
-                if st.button("➖", key=f"btn_n_minus_{activity}_{year}", use_container_width=True):
-                    st.session_state[sim_key_n] = max(
-                        -result['non_saudi'], st.session_state[sim_key_n] - 1
-                    )
+                st.button("➖", key=f"btn_n_minus_{activity}_{year}",
+                          use_container_width=True, on_click=_adj_n, args=(-1,))
             with bn2:
-                st.session_state[sim_key_n] = st.number_input(
-                    "Δ وافد", value=st.session_state[sim_key_n],
-                    min_value=-result['non_saudi'], max_value=10000, step=1,
-                    key=f"ni_n_{activity}_{year}", label_visibility="collapsed",
+                st.number_input(
+                    "Δ وافد",
+                    min_value=min_n, max_value=10000, step=1,
+                    key=sim_key_n, label_visibility="collapsed",
                 )
             with bn3:
-                if st.button("➕", key=f"btn_n_plus_{activity}_{year}", use_container_width=True):
-                    st.session_state[sim_key_n] = st.session_state[sim_key_n] + 1
+                st.button("➕", key=f"btn_n_plus_{activity}_{year}",
+                          use_container_width=True, on_click=_adj_n, args=(1,))
 
         with sim_c3:
             st.markdown(
@@ -1202,10 +1219,8 @@ with tab4:
                 '🔄 إعادة الضبط</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("صفّر السيناريو", key=f"btn_reset_{activity}_{year}", use_container_width=True):
-                st.session_state[sim_key_s] = 0
-                st.session_state[sim_key_n] = 0
-                st.rerun()
+            st.button("صفّر السيناريو", key=f"btn_reset_{activity}_{year}",
+                      use_container_width=True, on_click=_reset_sim)
 
         d_s = int(st.session_state[sim_key_s])
         d_n = int(st.session_state[sim_key_n])
