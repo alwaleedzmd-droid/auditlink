@@ -78,6 +78,33 @@ def saudis_needed_for_band(target_pct: float, total_employees: int, current_saud
     return max(0, required - current_saudi)
 
 
+def simulate_band(
+    saudi: int, non_saudi: int, activity: str, year: int,
+) -> dict:
+    """
+    Recompute band given raw saudi/non_saudi counts (without a GOSI file).
+    Used for what-if scenarios (adding/removing employees).
+    """
+    saudi = max(0, int(saudi))
+    non_saudi = max(0, int(non_saudi))
+    total = saudi + non_saudi
+    pct = round(saudi / total * 100, 2) if total > 0 else 0.0
+    thresholds = compute_band_thresholds(activity, total, year)
+    band = assign_band(pct, thresholds) if total > 0 else "red"
+    return {
+        "activity": activity,
+        "year": year,
+        "total": total,
+        "saudi": saudi,
+        "non_saudi": non_saudi,
+        "saudi_pct": pct,
+        "thresholds": thresholds,
+        "band": band,
+        "band_label_ar": BAND_LABELS_AR[band],
+        "band_color": BAND_COLORS_HEX[band],
+    }
+
+
 def compute_entity_band(gosi_df: pd.DataFrame, activity: str, year: int) -> dict:
     """
     Main entry. Returns full computation result:

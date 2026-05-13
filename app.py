@@ -23,7 +23,7 @@ from modules.audit_engine import (
 from modules.nitaqat_engine import (
     compute_profession_nitaqat, get_nitaqat_summary,
 )
-from modules.entity_nitaqat import compute_entity_band
+from modules.entity_nitaqat import compute_entity_band, simulate_band
 from modules.nitaqat_constants import (
     list_activities, BAND_KEYS, BAND_LABELS_AR, BAND_COLORS_HEX, YEARS,
 )
@@ -352,13 +352,14 @@ def _empty_state(icon, title, subtitle):
 
 
 def _kpi_card(icon, value, label, color, desc=""):
+    desc_html = f"<div class='kpi-desc'>{desc}</div>" if desc else ""
     st.markdown(f"""
     <div class="kpi-card">
       <div class="kpi-accent" style="background:{color};"></div>
       <div style="font-size:22px; margin-bottom:4px;">{icon}</div>
       <div class="kpi-num" style="color:{color};">{value}</div>
       <div class="kpi-label">{label}</div>
-      {{"<div class='kpi-desc'>" + desc + "</div>" if desc else ""}}
+      {desc_html}
     </div>
     """, unsafe_allow_html=True)
 
@@ -384,6 +385,8 @@ def _profession_card(row):
     if not achieved and needed == 0 and action:
         extra_msg = f'<span style="color:#ff9f0a;font-size:13px;">📝 {action}</span>'
 
+    extra_html = f"<div style='margin-top:10px;'>{extra_msg}</div>" if extra_msg else ""
+
     st.markdown(f"""
     <div class="card" style="margin-bottom:16px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -404,7 +407,7 @@ def _profession_card(row):
       <div class="nitaqat-bar-wrap">
         <div class="nitaqat-bar-fill" style="width:{bar_w}%; background:{bar_color};"></div>
       </div>
-      {{"<div style='margin-top:10px;'>" + extra_msg + "</div>" if extra_msg else ""}}
+      {extra_html}
     </div>
     """, unsafe_allow_html=True)
 
@@ -1130,6 +1133,138 @@ with tab4:
             f'<div class="card" style="border-right:6px solid {result["band_color"]};">{services_html}</div>',
             unsafe_allow_html=True,
         )
+
+        st.markdown("<hr class='divider'>", unsafe_allow_html=True)
+
+        # ── What-if Simulator (محاكي السيناريوهات) ──
+        st.markdown('<div class="section-title">🧪 محاكي السيناريوهات</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-sub">جرّب إضافة/إزالة موظفين سعوديين أو وافدين وشاهد تأثير ذلك على لون النطاق فورًا</div>',
+            unsafe_allow_html=True,
+        )
+
+        sim_key_s = f"sim_delta_saudi_{activity}_{year}"
+        sim_key_n = f"sim_delta_non_saudi_{activity}_{year}"
+        if sim_key_s not in st.session_state:
+            st.session_state[sim_key_s] = 0
+        if sim_key_n not in st.session_state:
+            st.session_state[sim_key_n] = 0
+
+        sim_c1, sim_c2, sim_c3 = st.columns([1, 1, 1], gap="medium")
+
+        with sim_c1:
+            st.markdown(
+                '<div style="font-size:14px;font-weight:600;color:#1d1d1f;margin-bottom:6px;">'
+                '🇸🇦 السعوديون</div>',
+                unsafe_allow_html=True,
+            )
+            bs1, bs2, bs3 = st.columns([1, 2, 1])
+            with bs1:
+                if st.button("➖", key=f"btn_s_minus_{activity}_{year}", use_container_width=True):
+                    st.session_state[sim_key_s] = max(
+                        -result['saudi'], st.session_state[sim_key_s] - 1
+                    )
+            with bs2:
+                st.session_state[sim_key_s] = st.number_input(
+                    "Δ سعودي", value=st.session_state[sim_key_s],
+                    min_value=-result['saudi'], max_value=10000, step=1,
+                    key=f"ni_s_{activity}_{year}", label_visibility="collapsed",
+                )
+            with bs3:
+                if st.button("➕", key=f"btn_s_plus_{activity}_{year}", use_container_width=True):
+                    st.session_state[sim_key_s] = st.session_state[sim_key_s] + 1
+
+        with sim_c2:
+            st.markdown(
+                '<div style="font-size:14px;font-weight:600;color:#1d1d1f;margin-bottom:6px;">'
+                '🌍 الوافدون</div>',
+                unsafe_allow_html=True,
+            )
+            bn1, bn2, bn3 = st.columns([1, 2, 1])
+            with bn1:
+                if st.button("➖", key=f"btn_n_minus_{activity}_{year}", use_container_width=True):
+                    st.session_state[sim_key_n] = max(
+                        -result['non_saudi'], st.session_state[sim_key_n] - 1
+                    )
+            with bn2:
+                st.session_state[sim_key_n] = st.number_input(
+                    "Δ وافد", value=st.session_state[sim_key_n],
+                    min_value=-result['non_saudi'], max_value=10000, step=1,
+                    key=f"ni_n_{activity}_{year}", label_visibility="collapsed",
+                )
+            with bn3:
+                if st.button("➕", key=f"btn_n_plus_{activity}_{year}", use_container_width=True):
+                    st.session_state[sim_key_n] = st.session_state[sim_key_n] + 1
+
+        with sim_c3:
+            st.markdown(
+                '<div style="font-size:14px;font-weight:600;color:#1d1d1f;margin-bottom:6px;">'
+                '🔄 إعادة الضبط</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("صفّر السيناريو", key=f"btn_reset_{activity}_{year}", use_container_width=True):
+                st.session_state[sim_key_s] = 0
+                st.session_state[sim_key_n] = 0
+                st.rerun()
+
+        d_s = int(st.session_state[sim_key_s])
+        d_n = int(st.session_state[sim_key_n])
+        sim = simulate_band(
+            result['saudi'] + d_s,
+            result['non_saudi'] + d_n,
+            activity, int(year),
+        )
+
+        # Side-by-side comparison
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        cmp_a, cmp_arrow, cmp_b = st.columns([5, 1, 5], gap="small")
+
+        with cmp_a:
+            st.markdown(f"""
+            <div class="card" style="border-right:6px solid {result['band_color']};">
+              <div style="font-size:13px;color:#6e6e73;font-weight:600;margin-bottom:4px;">الوضع الحالي</div>
+              <div style="font-size:24px;font-weight:800;color:{result['band_color']};">{result['band_label_ar']}</div>
+              <div style="font-size:14px;color:#1d1d1f;margin-top:8px;">
+                {result['saudi']} سعودي + {result['non_saudi']} وافد = <strong>{result['total']}</strong>
+              </div>
+              <div style="font-size:28px;font-weight:800;color:#1d1d1f;margin-top:4px;">{result['saudi_pct']}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with cmp_arrow:
+            arrow_color = "#30d158" if sim['saudi_pct'] > result['saudi_pct'] else (
+                "#ff453a" if sim['saudi_pct'] < result['saudi_pct'] else "#8a8a8e"
+            )
+            arrow_char = "←"
+            st.markdown(
+                f'<div style="text-align:center;padding-top:40px;font-size:32px;color:{arrow_color};">{arrow_char}</div>',
+                unsafe_allow_html=True,
+            )
+
+        with cmp_b:
+            delta_pct = round(sim['saudi_pct'] - result['saudi_pct'], 2)
+            delta_sign = "+" if delta_pct > 0 else ""
+            delta_color = "#30d158" if delta_pct > 0 else ("#ff453a" if delta_pct < 0 else "#6e6e73")
+            band_changed = sim['band'] != result['band']
+            change_badge = (
+                f'<span class="badge badge-blue" style="margin-right:8px;">تغيّر النطاق</span>'
+                if band_changed else ''
+            )
+            st.markdown(f"""
+            <div class="card" style="border-right:6px solid {sim['band_color']};">
+              <div style="font-size:13px;color:#6e6e73;font-weight:600;margin-bottom:4px;">
+                بعد السيناريو {change_badge}
+              </div>
+              <div style="font-size:24px;font-weight:800;color:{sim['band_color']};">{sim['band_label_ar']}</div>
+              <div style="font-size:14px;color:#1d1d1f;margin-top:8px;">
+                {sim['saudi']} سعودي + {sim['non_saudi']} وافد = <strong>{sim['total']}</strong>
+              </div>
+              <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px;">
+                <div style="font-size:28px;font-weight:800;color:#1d1d1f;">{sim['saudi_pct']}%</div>
+                <div style="font-size:14px;font-weight:600;color:{delta_color};">({delta_sign}{delta_pct}%)</div>
+              </div>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.markdown("<hr class='divider'>", unsafe_allow_html=True)
 
